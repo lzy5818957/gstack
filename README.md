@@ -161,6 +161,35 @@ Each skill feeds into the next. `/office-hours` writes a design doc that `/plan-
 | `/setup-browser-cookies` | **Session Manager** | Import cookies from your real browser (Chrome, Arc, Brave, Edge) into the headless session. Test authenticated pages. |
 | `/autoplan` | **Review Pipeline** | One command, fully reviewed plan. Runs CEO → design → eng review automatically with encoded decision principles. Surfaces only taste decisions for your approval. |
 
+### PM Layer — Issue to PR, Hands-Free
+
+The original gstack makes you the project manager — you move work through each stage manually. The PM layer fixes that. You're the CEO. The PM manages the sprint. You make decisions when asked.
+
+| Skill | Your specialist | What they do |
+|-------|----------------|--------------|
+| `/pm` | **Project Manager** | Takes a GitHub issue URL and drives it through the full pipeline: intake → plan → build → review → ship. Only escalates taste decisions, critical failures, and plan approval. Tracks bugs, decisions, and time per stage in a sprint log. |
+| `/status` | **Executive Dashboard** | CEO-level view of all active sprints: current stage, bugs found, blockers, elapsed time. Blocked sprints are highlighted. Team performance metrics included. |
+| `/report` | **Sprint Report** | Detailed per-sprint and cross-sprint analysis: bugs caught at review vs QA, stage durations, decision audit trail, scope metrics, and trend analysis with actionable recommendations. |
+
+**The CEO workflow:**
+```
+You:    /pm https://github.com/you/app/issues/42
+PM:     [reads issue, creates branch, generates plan]
+PM:     Plan ready — approve? [shows summary]
+You:    Approve.
+PM:     [builds, reviews, fixes, ships — autonomously]
+PM:     PR #87 created. 3 bugs caught in review, 0 escaped to QA.
+        Sprint duration: 14m. Posted summary to issue #42.
+
+You:    /status
+        === CEO DASHBOARD ===
+        #42  Add notifications   shipped    14m   3 bugs   PR #87
+        #43  Fix login timeout   building   6m    0 bugs   —
+
+You:    /report
+        [full metrics: where bugs were caught, decision audit, trends]
+```
+
 ### Power tools
 
 | Skill | What it does |
