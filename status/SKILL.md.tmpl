@@ -20,6 +20,8 @@ allowed-tools:
 
 {{PREAMBLE}}
 
+{{BASE_BRANCH_DETECT}}
+
 # /status — CEO Dashboard
 
 Quick executive view of all PM-managed work. No details you don't need,
@@ -29,21 +31,20 @@ all the signals you do.
 
 ## Step 1: Discover sprint logs
 
-```bash
-{{SLUG_SETUP}}
-```
-
-Find all PM sprint logs for this project:
+Run slug setup and file discovery in a single block (variables do not persist
+between bash blocks):
 
 ```bash
-ls -t ~/.gstack/projects/$SLUG/pm-sprint-*.json 2>/dev/null
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+mkdir -p ~/.gstack/projects/$SLUG
+echo "=== SLUG: $SLUG ==="
+echo "=== Sprint logs ==="
+ls -t ~/.gstack/projects/$SLUG/pm-sprint-*.json 2>/dev/null || echo "(none)"
+echo "=== Review logs ==="
+ls -t ~/.gstack/projects/$SLUG/*-reviews.jsonl 2>/dev/null || echo "(none)"
 ```
 
-If no sprint logs found, check if there are any review logs:
-
-```bash
-ls -t ~/.gstack/projects/$SLUG/*-reviews.jsonl 2>/dev/null
-```
+Remember the SLUG value output above — use it as a literal string in subsequent steps.
 
 If nothing exists:
 ```
@@ -106,7 +107,7 @@ TEAM PERFORMANCE (this project)
   Sprints completed:  12
   Avg duration:       14m
   Avg bugs/sprint:    1.3
-  Bug escape rate:    8% (found in QA, not review)
+  Bugs caught early:  92% (in self-check or review)
   Auto-decided:       89% of decisions
   Escalation rate:    11%
 ──────────────────────────────────────────────────────
@@ -127,7 +128,11 @@ TEAM PERFORMANCE (this project)
 
 Also read the review JSONL logs for additional context:
 
+Re-run slug setup in this block (variables do not persist between blocks).
+Use the SLUG value from Step 1:
+
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 cat ~/.gstack/projects/$SLUG/*-reviews.jsonl 2>/dev/null | tail -20
 ```
 

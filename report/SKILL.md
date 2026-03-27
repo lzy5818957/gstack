@@ -11,6 +11,7 @@ description: |
 allowed-tools:
   - Bash
   - Read
+  - Write
   - Glob
   - Grep
   - AskUserQuestion
@@ -277,6 +278,45 @@ Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
 file you are allowed to edit in plan mode. The plan file review report is part of the
 plan's living status.
 
+## Step 0: Detect platform and base branch
+
+First, detect the git hosting platform from the remote URL:
+
+```bash
+git remote get-url origin 2>/dev/null
+```
+
+- If the URL contains "github.com" → platform is **GitHub**
+- If the URL contains "gitlab" → platform is **GitLab**
+- Otherwise, check CLI availability:
+  - `gh auth status 2>/dev/null` succeeds → platform is **GitHub** (covers GitHub Enterprise)
+  - `glab auth status 2>/dev/null` succeeds → platform is **GitLab** (covers self-hosted)
+  - Neither → **unknown** (use git-native commands only)
+
+Determine which branch this PR/MR targets, or the repo's default branch if no
+PR/MR exists. Use the result as "the base branch" in all subsequent steps.
+
+**If GitHub:**
+1. `gh pr view --json baseRefName -q .baseRefName` — if succeeds, use it
+2. `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` — if succeeds, use it
+
+**If GitLab:**
+1. `glab mr view -F json 2>/dev/null` and extract the `target_branch` field — if succeeds, use it
+2. `glab repo view -F json 2>/dev/null` and extract the `default_branch` field — if succeeds, use it
+
+**Git-native fallback (if unknown platform, or CLI commands fail):**
+1. `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'`
+2. If that fails: `git rev-parse --verify origin/main 2>/dev/null` → use `main`
+3. If that fails: `git rev-parse --verify origin/master 2>/dev/null` → use `master`
+
+If all fail, fall back to `main`.
+
+Print the detected base branch name. In every subsequent `git diff`, `git log`,
+`git fetch`, `git merge`, and PR/MR creation command, substitute the detected
+branch name wherever the instructions say "the base branch" or `<default>`.
+
+---
+
 # /report — Sprint Report for CEO
 
 Detailed analysis of PM sprint performance. Unlike `/status` (quick glance),
@@ -287,19 +327,20 @@ which decisions were escalated, and how the team is trending over time.
 
 ## Step 1: Gather all sprint data
 
-```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
-```
-
-Read all sprint logs and review logs:
+Run slug setup and file discovery in a single block (variables do not persist
+between bash blocks):
 
 ```bash
-# Sprint logs
-ls -t ~/.gstack/projects/$SLUG/pm-sprint-*.json 2>/dev/null
-
-# Review logs
-cat ~/.gstack/projects/$SLUG/*-reviews.jsonl 2>/dev/null
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+mkdir -p ~/.gstack/projects/$SLUG
+echo "=== SLUG: $SLUG ==="
+echo "=== Sprint logs ==="
+ls -t ~/.gstack/projects/$SLUG/pm-sprint-*.json 2>/dev/null || echo "(none)"
+echo "=== Review logs ==="
+cat ~/.gstack/projects/$SLUG/*-reviews.jsonl 2>/dev/null || echo "(none)"
 ```
+
+Remember the SLUG value output above — use it as a literal string in subsequent steps.
 
 If the user specifies a sprint or issue number, filter to that sprint only.
 Otherwise, report on all sprints (with summary aggregation).
@@ -331,10 +372,10 @@ STAGE TIMELINE
 
 BUGS & ISSUES
 ──────────────────────────────────────────────────────
-  Found in review:    3 (2 auto-fixed, 1 escalated)
-  Found in QA:        1 (caught by browser test)
-  Found in tests:     0
-  Bug escape rate:    25% (1 of 4 found late — in QA not review)
+  Found in self-check: 1 (caught by tests during build)
+  Found in review:     3 (2 auto-fixed, 1 escalated)
+  Total:               4
+  Early detection:     100% (all caught before ship)
 ──────────────────────────────────────────────────────
 
 DECISIONS
@@ -383,12 +424,12 @@ EFFICIENCY TRENDS
 BUG DETECTION EFFECTIVENESS
 ──────────────────────────────────────────────────────
   Where bugs are caught:
-    Review (early):     78%  ████████████████░░░░░░
-    QA (late):          15%  ████░░░░░░░░░░░░░░░░░░
-    Tests (earliest):    7%  ██░░░░░░░░░░░░░░░░░░░░
+    Self-check (earliest): 22%  █████░░░░░░░░░░░░░░░░░
+    Review (early):        78%  ████████████████░░░░░░
 
   Review is catching most bugs — good signal.
-  [or: QA is catching too many bugs — review may need strengthening.]
+  [or: Self-check catching most — review may be redundant for simple issues.]
+  [or: Review catching everything — self-check tests may need strengthening.]
 ──────────────────────────────────────────────────────
 
 DECISION PATTERNS
@@ -413,11 +454,11 @@ COMPLEXITY DISTRIBUTION
 
 Based on the data, provide actionable recommendations:
 
-**If bug escape rate is high (>20%):**
-> "25% of bugs are escaping review and being caught in QA. Consider:
-> - Running /review with stricter settings
+**If review is catching most bugs but self-check is not (>80% found in review):**
+> "Review is doing the heavy lifting — 80% of bugs are found there, not in self-check. Consider:
+> - Writing more targeted tests during the build phase to catch issues earlier
 > - Adding /cso for security-sensitive changes
-> - Writing more targeted tests during the build phase"
+> - Improving test coverage in the build stage"
 
 **If a particular stage is consistently slow:**
 > "Build stage averages 18m — 2x longer than other stages. Common causes:
@@ -443,7 +484,8 @@ After presenting the report, offer:
 
 ```
 A) Done — thanks
-B) Export to markdown — save report to ~/.gstack/projects/$SLUG/pm-report-<date>.md
+B) Export to markdown — save report to ~/.gstack/projects/<slug>/pm-report-<date>.md
+   (substitute the project slug resolved in Step 1)
 C) Post to issue — add report as a GitHub issue comment
 D) Drill into sprint #<N> — show full decision log
 ```

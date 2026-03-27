@@ -323,6 +323,57 @@ branch name wherever the instructions say "the base branch" or `<default>`.
 
 ---
 
+## Prerequisite Skill Offer
+
+When the design doc check above prints "No design doc found," offer the prerequisite
+skill before proceeding.
+
+Say to the user via AskUserQuestion:
+
+> "No design doc found for this branch. `/office-hours` produces a structured problem
+> statement, premise challenge, and explored alternatives — it gives this review much
+> sharper input to work with. Takes about 10 minutes. The design doc is per-feature,
+> not per-product — it captures the thinking behind this specific change."
+
+Options:
+- A) Run /office-hours now (we'll pick up the review right after)
+- B) Skip — proceed with standard review
+
+If they skip: "No worries — standard review. If you ever want sharper input, try
+/office-hours first next time." Then proceed normally. Do not re-offer later in the session.
+
+If they choose A:
+
+Say: "Running /office-hours inline. Once the design doc is ready, I'll pick up
+the review right where we left off."
+
+Read the office-hours skill file from disk using the Read tool:
+`~/.claude/skills/gstack/office-hours/SKILL.md`
+
+Follow it inline, **skipping these sections** (already handled by the parent skill):
+- Preamble (run first)
+- AskUserQuestion Format
+- Completeness Principle — Boil the Lake
+- Search Before Building
+- Contributor Mode
+- Completion Status Protocol
+- Telemetry (run last)
+
+If the Read fails (file not found), say:
+"Could not load /office-hours — proceeding with standard review."
+
+After /office-hours completes, re-run the design doc check:
+```bash
+SLUG=$(~/.claude/skills/gstack/browse/bin/remote-slug 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-' || echo 'no-branch')
+DESIGN=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+[ -z "$DESIGN" ] && DESIGN=$(ls -t ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null | head -1)
+[ -n "$DESIGN" ] && echo "Design doc found: $DESIGN" || echo "No design doc found"
+```
+
+If a design doc is now found, read it and continue the review.
+If none was produced (user may have cancelled), proceed with standard review.
+
 # /pm — Project Manager Orchestrator
 
 One command. GitHub issue in, pull request out.
@@ -364,21 +415,17 @@ The PM auto-decides operational questions using these rules:
 
 ### Step 1: Parse the GitHub issue
 
-Extract the issue details:
+Extract the issue details. Run slug setup and issue fetch in a single block
+(variables do not persist between bash blocks):
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+# Fetch the issue — replace ISSUE_REF with the URL or number the user provided:
+gh issue view ISSUE_REF --json number,title,body,labels,assignees,milestone
 ```
 
-If the user provided a GitHub issue URL or number, fetch it:
-
-```bash
-# For URL: gh issue view <url> --json number,title,body,labels,assignees,milestone
-# For number: gh issue view <number> --json number,title,body,labels,assignees,milestone
-```
-
-If no issue was provided, use AskUserQuestion:
-- "What issue should I work on? Provide a GitHub issue URL, issue number, or describe the task."
+If no issue was provided, use AskUserQuestion first to get the issue URL or number,
+then run the block above with the provided reference.
 
 Extract:
 - **Title**: the issue title
@@ -396,15 +443,22 @@ Estimated complexity: <small (1-3 files) / medium (4-10 files) / large (10+ file
 
 ### Step 2: Initialize sprint tracking
 
-Create the sprint log file:
+Create the sprint log file. Each bash block is a separate shell, so re-run slug
+setup in every block that needs the project slug:
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 DATETIME=$(date +%Y%m%d-%H%M%S)
-ISSUE_NUM=<issue number>
+ISSUE_NUM=ISSUE_NUMBER
 SPRINT_ID="issue-${ISSUE_NUM}-${DATETIME}"
 SPRINT_LOG="$HOME/.gstack/projects/$SLUG/pm-sprint-${SPRINT_ID}.json"
+mkdir -p "$HOME/.gstack/projects/$SLUG"
 echo "SPRINT_LOG=$SPRINT_LOG"
+echo "SLUG=$SLUG"
 ```
+
+Remember the SPRINT_LOG path and SLUG value output above — use them as literal
+strings in all subsequent steps. Do not rely on shell variables across blocks.
 
 Write the initial sprint state:
 
@@ -431,7 +485,7 @@ Write the initial sprint state:
     "ship": { "status": "pending" }
   },
   "metrics": {
-    "bugs_found": { "review": 0, "qa": 0, "total": 0 },
+    "bugs_found": { "review": 0, "self_check": 0, "total": 0 },
     "decisions": { "auto": 0, "escalated": 0, "total": 0 },
     "lines_changed": 0,
     "files_changed": 0,
@@ -565,12 +619,15 @@ Before moving to review, the PM runs a quick self-check:
 2. Run `git diff --stat` to verify scope matches the plan
 3. Check that all acceptance criteria have corresponding test coverage
 
-**If tests fail:** Fix them. Do not proceed to review with failing tests.
-Log the self-check result in the sprint log.
+**If tests fail:** Fix them and re-run. If tests still fail after 2 attempts,
+escalate to CEO with the failing test names and error context. Do not proceed
+to review with failing tests. Log the self-check result in the sprint log.
 
 **If scope drifted:** Log the drift and continue (the review will catch it).
 
 Update sprint log: mark build as completed, record lines/files changed.
+
+Use the base branch detected in Step 0 in place of `<base>`:
 
 ```bash
 LINES=$(git diff <base>...HEAD --stat | tail -1)
@@ -595,18 +652,12 @@ Read `~/.claude/skills/gstack/review/SKILL.md` and follow its methodology.
 
 ### Step 2: Track review metrics
 
-After review completes, update sprint log:
+After review completes, update the sprint log's `metrics.bugs_found` object.
+Merge these values into the existing object — preserve all existing fields:
 
-```json
-{
-  "metrics": {
-    "bugs_found": {
-      "review": <count of issues found>,
-      "total": <running total>
-    }
-  }
-}
-```
+- Set `metrics.bugs_found.review` to the count of issues found by /review
+- Update `metrics.bugs_found.total` to the running total (self_check + review)
+- Keep `metrics.bugs_found.self_check` unchanged
 
 ### Step 3: Fix review findings
 
@@ -640,14 +691,17 @@ The PM lets /ship handle: version bump, changelog, bisectable commits, push, PR 
 
 ### Step 2: Link PR to issue
 
-After /ship creates the PR, add the issue reference:
+After /ship creates the PR, check whether the PR body already contains
+`Closes #N` (where N is the issue number). If not, append it:
 
 ```bash
-# The PR body should already reference the issue, but ensure it:
-gh pr edit <pr-number> --body "$(gh pr view <pr-number> --json body --jq .body)
-
-Closes #<issue-number>"
+BODY=$(gh pr view PR_NUMBER --json body --jq .body)
+if ! echo "$BODY" | grep -q "Closes #ISSUE_NUMBER"; then
+  printf '%s\n\nCloses #ISSUE_NUMBER' "$BODY" | gh pr edit PR_NUMBER --body-file -
+fi
 ```
+
+Replace PR_NUMBER and ISSUE_NUMBER with the actual values from this sprint.
 
 ### Step 3: Post sprint summary as issue comment
 
@@ -664,8 +718,8 @@ gh issue comment <issue-number> --body "$(cat <<'EOF'
 ### Metrics
 - Lines changed: <N>
 - Files changed: <N>
+- Bugs found (self-check): <N>
 - Bugs found (review): <N>
-- Bugs found (QA): <N>
 - Decisions auto-resolved: <N>
 - Decisions escalated to CEO: <N>
 
@@ -686,9 +740,12 @@ EOF
 
 Update sprint log: mark ship as completed, set `completed_at`, finalize all metrics.
 
-Write the review log entry:
+Write the review log entry. Replace all N values with actual counts from the
+sprint log, and PR with the actual PR number:
+
 ```bash
-~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"pm","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"shipped","issue":<N>,"pr":<PR>,"bugs_review":<N>,"bugs_qa":<N>,"decisions_auto":<N>,"decisions_escalated":<N>,"commit":"'"$(git rev-parse --short HEAD)"'"}'
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
+~/.claude/skills/gstack/bin/gstack-review-log '{"skill":"pm","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"shipped","issue":N,"pr":N,"bugs_self_check":N,"bugs_review":N,"decisions_auto":N,"decisions_escalated":N,"commit":"'"$(git rev-parse --short HEAD)"'"}'
 ```
 
 ---
