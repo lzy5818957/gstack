@@ -13,7 +13,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const QUEUE = path.join(process.env.HOME || '/tmp', '.gstack', 'sidebar-agent-queue.jsonl');
+const QUEUE = process.env.SIDEBAR_QUEUE_PATH || path.join(process.env.HOME || '/tmp', '.gstack', 'sidebar-agent-queue.jsonl');
 const SERVER_PORT = parseInt(process.env.BROWSE_SERVER_PORT || '34567', 10);
 const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const POLL_MS = 500;  // Fast polling — server already did the user-facing response
@@ -66,10 +66,11 @@ function writeToInbox(message: string, pageUrl?: string, sessionId?: string): vo
 // ─── Auth ────────────────────────────────────────────────────────
 
 async function refreshToken(): Promise<string | null> {
+  // Read token from state file (same-user, mode 0o600) instead of /health
   try {
-    const resp = await fetch(`${SERVER_URL}/health`, { signal: AbortSignal.timeout(3000) });
-    if (!resp.ok) return null;
-    const data = await resp.json() as any;
+    const stateFile = process.env.BROWSE_STATE_FILE ||
+      path.join(process.env.HOME || '/tmp', '.gstack', 'browse.json');
+    const data = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
     authToken = data.token || null;
     return authToken;
   } catch {
@@ -158,8 +159,9 @@ async function askClaude(queueEntry: any): Promise<void> {
   await sendEvent({ type: 'agent_start' });
 
   return new Promise((resolve) => {
-    // Build args fresh — don't trust --resume from queue (session may be stale)
-    let claudeArgs = ['-p', prompt, '--output-format', 'stream-json', '--verbose',
+    // Use args from queue entry (server sets --model, --allowedTools, prompt framing).
+    // Fall back to defaults only if queue entry has no args (backward compat).
+    let claudeArgs = args || ['-p', prompt, '--output-format', 'stream-json', '--verbose',
       '--allowedTools', 'Bash,Read,Glob,Grep'];
 
     // Validate cwd exists — queue may reference a stale worktree
@@ -205,14 +207,15 @@ async function askClaude(queueEntry: any): Promise<void> {
       });
     });
 
-    // Timeout after 300 seconds (5 min — multi-page tasks need time)
+    // Timeout (default 300s / 5 min — multi-page tasks need time)
+    const timeoutMs = parseInt(process.env.SIDEBAR_AGENT_TIMEOUT || '300000', 10);
     setTimeout(() => {
       try { proc.kill(); } catch {}
-      sendEvent({ type: 'agent_error', error: 'Timed out after 300s' }).then(() => {
+      sendEvent({ type: 'agent_error', error: `Timed out after ${timeoutMs / 1000}s` }).then(() => {
         isProcessing = false;
         resolve();
       });
-    }, 300000);
+    }, timeoutMs);
   });
 }
 

@@ -1,5 +1,19 @@
 # TODOS
 
+## Sidebar Security
+
+### ML Prompt Injection Classifier
+
+**What:** Add DeBERTa-v3-base-prompt-injection-v2 via @huggingface/transformers v4 (WASM backend) as an ML defense layer for the Chrome sidebar. Reusable `browse/src/security.ts` module with `checkInjection()` API. Includes canary tokens, attack logging, shield icon, special telemetry (AskUserQuestion on detection even when telemetry off), and BrowseSafe-bench red team test harness (3,680 adversarial cases from Perplexity).
+
+**Why:** PR 1 fixes the architecture (command allowlist, XML framing, Opus default). But attackers can still trick Claude into navigating to phishing sites or exfiltrating visible page data via allowed browse commands. The ML classifier catches prompt injection patterns that architectural controls can't see. 94.8% accuracy, 99.6% recall, ~50-100ms inference via WASM. Defense-in-depth.
+
+**Context:** Full design doc with industry research, open source tool landscape, Codex review findings, and ambitious Bun-native vision (5ms inference via FFI + Apple Accelerate): [`docs/designs/ML_PROMPT_INJECTION_KILLER.md`](docs/designs/ML_PROMPT_INJECTION_KILLER.md). CEO plan with scope decisions: `~/.gstack/projects/garrytan-gstack/ceo-plans/2026-03-28-sidebar-prompt-injection-defense.md`.
+
+**Effort:** L (human: ~2 weeks / CC: ~3-4 hours)
+**Priority:** P0
+**Depends on:** Sidebar security fix PR (command allowlist + XML framing + arg fix) landing first
+
 ## Builder Ethos
 
 ### First-time Search Before Building intro
@@ -185,6 +199,18 @@ Sidebar agent writes structured messages to `.context/sidebar-inbox/`. Workspace
 **Priority:** P3
 **Depends on:** Headed mode (shipped)
 
+### Sidebar agent needs Write tool + better error visibility
+
+**What:** Two issues with the sidebar agent (`sidebar-agent.ts`): (1) `--allowedTools` is hardcoded to `Bash,Read,Glob,Grep`, missing `Write`. Claude can't create files (like CSVs) when asked. (2) When Claude errors or returns empty, the sidebar UI shows nothing, just a green dot. No error message, no "I tried but failed", nothing.
+
+**Why:** Users ask "write this to a CSV" and the sidebar silently can't. Then they think it's broken. The UI needs to surface errors visibly, and Claude needs the tools to actually do what's asked.
+
+**Context:** `sidebar-agent.ts:163` hardcodes `--allowedTools`. The event relay (`handleStreamEvent`) handles `agent_done` and `agent_error` but the extension's sidepanel.js may not be rendering error states. The sidebar should show "Error: ..." or "Claude finished but produced no output" instead of staying on the green dot forever.
+
+**Effort:** S (human: ~2h / CC: ~10min)
+**Priority:** P1
+**Depends on:** None
+
 ### Chrome Web Store publishing
 
 **What:** Publish the gstack browse Chrome extension to Chrome Web Store for easier install.
@@ -220,6 +246,18 @@ Linux cookie import shipped in v0.11.11.0 (Wave 3). Supports Chrome, Chromium, B
 **Effort:** L
 **Priority:** P2
 **Depends on:** None (BASE_BRANCH_DETECT multi-platform resolver is already done)
+
+### Multi-commit CHANGELOG completeness eval
+
+**What:** Add a periodic E2E eval that creates a branch with 5+ commits spanning 3+ themes (features, cleanup, infra), runs /ship's Step 5 CHANGELOG generation, and verifies the CHANGELOG mentions all themes.
+
+**Why:** The bug fixed in v0.11.22 (garrytan/ship-full-commit-coverage) showed that /ship's CHANGELOG generation biased toward recent commits on long branches. The prompt fix adds a cross-check, but no test exercises the multi-commit failure mode. The existing `ship-local-workflow` E2E only uses a single-commit branch.
+
+**Context:** Would be a `periodic` tier test (~$4/run, non-deterministic since it tests LLM instruction-following). Setup: create bare remote, clone, add 5+ commits across different themes on a feature branch, run Step 5 via `claude -p`, verify CHANGELOG output covers all themes. Pattern: `ship-local-workflow` in `test/skill-e2e-workflow.test.ts`.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
 
 ### Ship log — persistent record of /ship runs
 
