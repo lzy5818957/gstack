@@ -51,7 +51,7 @@ echo Running setup via Git Bash...
 
 echo.
 echo gstack installed globally. Available in all Claude Code sessions.
-echo Skills: /pm, /status, /report, and all original gstack skills.
+echo Skills: /pm, /status, /report, /design-html, /learn, and all original gstack skills.
 echo.
 echo To uninstall, run uninstall.bat
 pause
