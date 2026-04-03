@@ -13,7 +13,6 @@ if exist "%TARGET%" (
 xcopy /e /i /q "%~dp0" "%TARGET%"
 
 cd /d "%TARGET%"
-git checkout feat/pm-layer 2>nul
 
 :: Find Git Bash and run setup
 set "GITBASH="
@@ -28,7 +27,7 @@ if "%GITBASH%"=="" (
     echo.
 ) else (
     echo Running setup via Git Bash...
-    "%GITBASH%" -c "cd '%TARGET%' && ./setup"
+    "%GITBASH%" -c "./setup"
 )
 
 echo.

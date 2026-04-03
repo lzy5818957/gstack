@@ -315,11 +315,12 @@ Data is stored in [Supabase](https://supabase.com) (open source Firebase alterna
 ```
 ## gstack
 Use /browse from gstack for all web browsing. Never use mcp__claude-in-chrome__* tools.
-Available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review,
-/design-consultation, /review, /ship, /land-and-deploy, /canary, /benchmark, /browse,
-/qa, /qa-only, /design-review, /setup-browser-cookies, /setup-deploy, /retro,
-/investigate, /document-release, /codex, /cso, /autoplan, /careful, /freeze, /guard,
-/unfreeze, /gstack-upgrade.
+Available skills: /pm, /status, /report, /office-hours, /plan-ceo-review, /plan-eng-review,
+/plan-design-review, /design-consultation, /design-shotgun, /review, /ship,
+/land-and-deploy, /canary, /benchmark, /browse, /connect-chrome, /qa, /qa-only,
+/design-review, /setup-browser-cookies, /setup-deploy, /retro, /investigate,
+/document-release, /codex, /cso, /autoplan, /careful, /freeze, /guard, /unfreeze,
+/gstack-upgrade.
 ```
 
 ## License
